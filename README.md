@@ -85,25 +85,25 @@ If `source_folder` is omitted, the current working directory is used.
 Preview changes without moving anything:
 
 ```bash
-python organize_music.py "d:\Music\jewish_music" --recursive
+python organize_music.py "D:\Music" --recursive
 ```
 
 Actually move files and preserve timestamps:
 
 ```bash
-python organize_music.py "d:\Music\jewish_music" --recursive --no-dry-run
+python organize_music.py "D:\Music" --recursive --no-dry-run
 ```
 
 Normalize metadata tags while moving:
 
 ```bash
-python organize_music.py "d:\Music\jewish_music" --recursive --no-dry-run --normalize-tags
+python organize_music.py "D:\Music" --recursive --no-dry-run --normalize-tags
 ```
 
 Write operations to a specific log file:
 
 ```bash
-python organize_music.py "d:\Music\jewish_music" --recursive --no-dry-run --log-file "d:\Music\jewish_music\organize_music.log"
+python organize_music.py "D:\Music" --recursive --no-dry-run --log-file "D:\Music\organize_music.log"
 ```
 
 ## Notes
