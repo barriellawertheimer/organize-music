@@ -1,8 +1,29 @@
+import sys
+
+def check_dependencies():
+    """Check if required dependencies are installed and provide installation help if not."""
+    missing = []
+    try:
+        import mutagen
+    except ImportError:
+        missing.append('mutagen')
+    try:
+        import tqdm
+    except ImportError:
+        missing.append('tqdm')
+    
+    if missing:
+        print(f"Error: Missing required dependencies: {', '.join(missing)}")
+        print("Install them with: pip install " + ' '.join(missing))
+        sys.exit(1)
+
+
+check_dependencies()
+
 import argparse
 import os
 import re
 import shutil
-import sys
 from datetime import datetime
 from pathlib import Path
 from mutagen import File
@@ -10,9 +31,9 @@ from mutagen.easyid3 import EasyID3
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3NoHeaderError
 from mutagen.mp4 import MP4
+import tqdm
 
-SUPPORTED_EXTENSIONS = {'.mp3', '.flac', '.m4a', '.mp4', '.ogg', '.wav', '.aac'}
-
+SUPPORTED_EXTENSIONS = ['.mp3', '.flac', '.wav', '.m4a', '.ogg']
 
 def sanitize_filename(name):
     """Normalize text so it can safely be used in filenames."""
@@ -236,7 +257,7 @@ def organize_music(source_folder, recursive=False, dry_run=True, log_file=None, 
     conflicts_count = 0
     planned_moves = []
 
-    for file_path in files_to_process:
+    for file_path in tqdm.tqdm(files_to_process, desc="Scanning files"):
         tags = extract_audio_tags(str(file_path))
         if tags:
             artist = sanitize_filename(tags.get('artist'))
@@ -251,7 +272,6 @@ def organize_music(source_folder, recursive=False, dry_run=True, log_file=None, 
                 log_message(log_path, f"No tags for {file_path}; inferred artist={artist}, album={album}, title={title}")
 
         dest_dir = source_path / artist / album
-        dest_dir.mkdir(parents=True, exist_ok=True)
         desired_name = f"{track} - {title}{file_path.suffix}"
         dest_path = dest_dir / desired_name
         final_dest = make_unique_path(dest_path)
@@ -266,7 +286,7 @@ def organize_music(source_folder, recursive=False, dry_run=True, log_file=None, 
 
     print(f"Planning {len(planned_moves)} move(s) with {conflicts_count} conflict(s).\n")
 
-    for source_path_value, dest_path, artist, album, title, track in planned_moves:
+    for source_path_value, dest_path, artist, album, title, track in tqdm.tqdm(planned_moves, desc="Moving files" if not dry_run else "Planning moves"):
         if dry_run:
             print(f"📂 WOULD MOVE: {source_path_value.name}")
             print(f"   TAGS: artist={artist}, album={album}, title={title}, track={track}")
