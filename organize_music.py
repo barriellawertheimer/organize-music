@@ -225,7 +225,7 @@ def log_message(log_file, message):
         pass
 
 
-def organize_music(source_folder, recursive=False, dry_run=True, log_file=None, preserve_time=True, normalize_tags=False):
+def organize_music(source_folder, recursive=False, preview=False, log_file=None, preserve_time=True, normalize_tags=False, confirm=True):
     source_path = Path(source_folder).expanduser().resolve()
 
     if not source_path.exists() or not source_path.is_dir():
@@ -239,7 +239,7 @@ def organize_music(source_folder, recursive=False, dry_run=True, log_file=None, 
 
     files_to_process.sort()
     print(f"Found {len(files_to_process)} audio file(s) to process.")
-    if dry_run and files_to_process:
+    if preview and files_to_process:
         print("Files found:")
         for file_path in files_to_process:
             print(f"  - {file_path.name}")
@@ -248,14 +248,16 @@ def organize_music(source_folder, recursive=False, dry_run=True, log_file=None, 
     if log_file:
         log_path = Path(log_file).expanduser().resolve()
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_message(log_path, f"Starting organize_music on {source_path} (recursive={recursive}, dry_run={dry_run})")
+        log_message(log_path, f"Starting organize_music on {source_path} (recursive={recursive}, preview={preview})")
     else:
         log_path = None
 
     processed_count = 0
     skipped_count = 0
     conflicts_count = 0
+    missing_tags_count = 0
     planned_moves = []
+    destination_layout = {}  # Track artist/album structure
 
     for file_path in tqdm.tqdm(files_to_process, desc="Scanning files"):
         tags = extract_audio_tags(str(file_path))
@@ -267,6 +269,7 @@ def organize_music(source_folder, recursive=False, dry_run=True, log_file=None, 
         else:
             artist, album, title = infer_missing_metadata(file_path, '', '', '')
             track = '00'
+            missing_tags_count += 1
             print(f"⚠️  No tags found for {file_path.name}; using filename/path inference.")
             if log_path:
                 log_message(log_path, f"No tags for {file_path}; inferred artist={artist}, album={album}, title={title}")
@@ -283,11 +286,42 @@ def organize_music(source_folder, recursive=False, dry_run=True, log_file=None, 
                 log_message(log_path, f"Conflict: {dest_path} exists; using {final_dest}")
 
         planned_moves.append((file_path, final_dest, artist, album, title, track))
+        
+        # Track destination layout
+        if artist not in destination_layout:
+            destination_layout[artist] = {}
+        if album not in destination_layout[artist]:
+            destination_layout[artist][album] = []
+        destination_layout[artist][album].append(desired_name)
 
-    print(f"Planning {len(planned_moves)} move(s) with {conflicts_count} conflict(s).\n")
+    # Show summary
+    print(f"\n{'='*50}")
+    print("ORGANIZATION SUMMARY")
+    print(f"{'='*50}")
+    print(f"Total files: {len(planned_moves)}")
+    print(f"Files with missing tags: {missing_tags_count}")
+    print(f"Conflicts detected: {conflicts_count}")
+    print(f"Destination layout:")
+    
+    for artist, albums in sorted(destination_layout.items()):
+        print(f"  {artist}/")
+        for album, files in sorted(albums.items()):
+            print(f"    {album}/ ({len(files)} files)")
+    
+    print(f"{'='*50}")
+    
+    if preview:
+        print("PREVIEW MODE - No files will be moved.")
+        print("Use --yes to execute moves without confirmation.")
+    else:
+        if confirm and not input("\nProceed with moving files? (y/N): ").lower().startswith('y'):
+            print("Operation cancelled.")
+            return
+    
+    print()
 
-    for source_path_value, dest_path, artist, album, title, track in tqdm.tqdm(planned_moves, desc="Moving files" if not dry_run else "Planning moves"):
-        if dry_run:
+    for source_path_value, dest_path, artist, album, title, track in tqdm.tqdm(planned_moves, desc="Moving files" if not preview else "Planning moves"):
+        if preview:
             print(f"📂 WOULD MOVE: {source_path_value.name}")
             print(f"   TAGS: artist={artist}, album={album}, title={title}, track={track}")
             print(f"   TO:   {dest_path}\n")
@@ -313,10 +347,10 @@ def organize_music(source_folder, recursive=False, dry_run=True, log_file=None, 
                 log_message(log_path, f"Failed: {source_path_value} -> {dest_path}: {exc}")
 
     print("\n" + "=" * 40)
-    if dry_run:
-        print("DRY RUN COMPLETE. No files were moved.")
+    if preview:
+        print("PREVIEW COMPLETE. No files were moved.")
         print(f"Prepared to move {processed_count} file(s). Skipped {skipped_count} actual operations.")
-        print("Use --no-dry-run to execute the moves.")
+        print("Remove --preview to execute the moves.")
     else:
         print(f"COMPLETE! Moved {processed_count} files. Skipped {skipped_count} errors.")
         if log_path:
@@ -327,10 +361,11 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Organize music files by artist and album.')
     parser.add_argument('source', nargs='?', default='.', help='Folder containing audio files')
     parser.add_argument('--recursive', action='store_true', help='Search subfolders recursively')
-    parser.add_argument('--dry-run', '--dry_run', dest='dry_run', action='store_true', default=True, help='Preview moves without moving files')
-    parser.add_argument('--no-dry-run', '--no_dry_run', dest='dry_run', action='store_false', help='Actually move files instead of previewing')
+    parser.add_argument('--preview', action='store_true', help='Preview moves without moving files (dry run)')
+    parser.add_argument('--yes', '--confirm', action='store_true', help='Skip interactive confirmation and proceed with moves')
     parser.add_argument('--wait', action='store_true', help='Wait for Enter before exiting')
     parser.add_argument('--log-file', default='organize_music.log', help='Path to a log file')
+    parser.add_argument('--no-log-file', action='store_true', help='Disable logging to file')
     parser.add_argument('--no-preserve-time', dest='preserve_time', action='store_false', help='Do not preserve original timestamps')
     parser.add_argument('--normalize-tags', action='store_true', help='Normalize and rewrite metadata tags in supported formats')
     return parser.parse_args()
@@ -341,10 +376,11 @@ if __name__ == '__main__':
     organize_music(
         args.source,
         recursive=args.recursive,
-        dry_run=args.dry_run,
-        log_file=args.log_file,
+        preview=args.preview,
+        log_file=None if args.no_log_file else args.log_file,
         preserve_time=args.preserve_time,
-        normalize_tags=args.normalize_tags
+        normalize_tags=args.normalize_tags,
+        confirm=not args.yes
     )
 
     if args.wait and sys.stdin.isatty():
